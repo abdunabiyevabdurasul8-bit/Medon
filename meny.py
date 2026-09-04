@@ -37,7 +37,7 @@ from telegram.ext import (
 # SOZLAMALAR
 # ============================================================
 
-BOT_TOKEN = "8611684086:AAF3lCOhLqV3B7Hi_klpmeTQcZMN6hjtKX0"
+BOT_TOKEN = "8611684086:AAGlWYOCV4IsmI7DtUBZSzoZiuYSuGQBcWQ"
 ADMIN_ID = 5692925792
 
 COINDROP_API_KEY = "cd_3131c619ce12ac55a92a801105d27bcd1df81dc9f8a07578"
