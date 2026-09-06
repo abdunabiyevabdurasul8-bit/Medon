@@ -2111,7 +2111,7 @@ async def deposit(update, context):
     await q.message.reply_text(
         "💳 Balans to'ldirish\n\n"
         f"Karta: `9860 6067 6078 9275 A.Abdurasul`\n\n"
-        "Qancha pul tashlamoqchisiz?\n"
+        "tolov qilib bob qancha tashganzni yozing\n"
         "Masalan: 50000",
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup([
@@ -2162,7 +2162,7 @@ async def text_handler(update, context):
 
             return
 
-        if amount <= 0:
+        if amount <= 1000:
 
             await update.message.reply_text(
                 "❌ Noto'g'ri summa."
@@ -2176,7 +2176,7 @@ async def text_handler(update, context):
         })
 
         card = get_setting(
-            "payment_card",
+            "PAYMENT_CARD",
             PAYMENT_CARD
         )
 
@@ -2185,9 +2185,9 @@ async def text_handler(update, context):
             f"`{card}`\n\n"
             f"💰 Tashlaydigan summa: "
             f"{amount:,.0f} so'm\n\n"
-            "⚠️ Aynan shu summani tashlang.\n"
-            "To'lovdan keyin 📸 chek rasmini yuboring.\n\n"
-            "Chek admin tomonidan tekshiriladi.",
+            ".\n"
+            "📸 chek rasmini yuboring.\n\n"
+            "Chek qabul qilindi bot tomdan tekshrgandan song hisobingzga balans qoshladi",
             parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup([
                 [
