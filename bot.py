@@ -2110,7 +2110,7 @@ async def deposit(update, context):
 
     await q.message.reply_text(
         "💳 Balans to'ldirish\n\n"
-        f"Karta: `{card}`\n\n"
+        f"Karta: `9860 6067 6078 9275 A.Abdurasul`\n\n"
         "Qancha pul tashlamoqchisiz?\n"
         "Masalan: 50000",
         parse_mode="Markdown",
