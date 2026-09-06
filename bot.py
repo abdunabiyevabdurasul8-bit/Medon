@@ -4242,10 +4242,6 @@ async def admin_callback(update, context):
 
     elif d == "a_sync":
 
-        await q.message.reply_text(
-            "kuting"
-        )
-
         ok, result = sync_catalog()
 
         await q.message.reply_text(
