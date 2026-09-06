@@ -27,7 +27,7 @@ from telegram.ext import (
 # SOZLAMALAR
 # ============================================================
 
-BOT_TOKEN = "8611684086:AAGlWYOCV4IsmI7DtUBZSzoZiuYSuGQBcWQ"
+BOT_TOKEN = "8611684086:AAFhtT3TBGlYZCJ8_l0JydrIyEuZNpo2s_k"
 
 # Telegram ID raqamingiz
 ADMIN_ID = 5692925792
