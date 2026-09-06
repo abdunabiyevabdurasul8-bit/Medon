@@ -4243,7 +4243,7 @@ async def admin_callback(update, context):
     elif d == "a_sync":
 
         await q.message.reply_text(
-            "katalogi yangilanmoqda..."
+            "kuting"
         )
 
         ok, result = sync_catalog()
