@@ -33,7 +33,7 @@ from telegram.ext import (
 # SOZLAMALAR
 # ============================================================
 
-BOT_TOKEN = os.getenv("BOT_TOKEN", "BOT_TOKEN").strip()
+BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
 
 ADMIN_ID_RAW = os.getenv("ADMIN_ID", "5692925792").strip()
 
