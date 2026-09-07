@@ -44,7 +44,7 @@ MOBILE_LEGENDS_GAME_ID = 54
 DEFAULT_MARKUP = Decimal("0")
 
 # Balans to'ldirish kartasi
-PAYMENT_CARD = ""
+PAYMENT_CARD = "9860 6067 6078 9275 A.Abdurasul"
 
 DB = "bot.db"
 
@@ -678,7 +678,7 @@ def ensure_pubg():
 
 
 # ============================================================
-# MOBILE LEGENDS 3
+# MOBILE LEGENDS 54
 # ============================================================
 
 def ensure_mobile_legends():
@@ -1106,7 +1106,7 @@ async def start(update, context):
 
     await update.message.reply_text(
         "Assalomu Aleykum 👋\n\n"
-        "🎮 Donat botiga xush kelibsiz!",
+        "🎮 Donuz botiga xush kelibsiz!",
         reply_markup=main_menu()
     )
 
@@ -1125,7 +1125,7 @@ async def games(update, context):
         pass
 
     await q.message.reply_text(
-        "🔄 PlayPay katalogi yangilanmoqda..."
+        "kuting"
     )
 
     ok, msg = sync_catalog()
