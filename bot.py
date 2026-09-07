@@ -2,6 +2,12 @@ import sqlite3
 import logging
 import uuid
 import json
+import os
+import asyncio
+import threading
+
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
 from decimal import Decimal, InvalidOperation
 from datetime import datetime, timedelta
 
@@ -27,13 +33,17 @@ from telegram.ext import (
 # SOZLAMALAR
 # ============================================================
 
-BOT_TOKEN = "8799964859:AAG1J91dZe-veFaRFPBkDsFmEd2t8Z8pUF0"
+BOT_TOKEN = os.getenv("BOT_TOKEN", "8802992561:AAHCwfp0mBNp75lwiQrMMLBazpBTPACGn-U").strip()
 
-# Telegram ID raqamingiz
-ADMIN_ID = 5692925792
+ADMIN_ID_RAW = os.getenv("ADMIN_ID", "5692925792").strip()
 
-# PlayPay API
-PLAYPAY_API_KEY = "pp_4ea40fb13b366d980670e2c928f69383a1683f3fce5f2df0"
+try:
+    ADMIN_ID = int(ADMIN_ID_RAW)
+except (ValueError, TypeError):
+    ADMIN_ID = 0
+
+PLAYPAY_API_KEY = os.getenv("PLAYPAY_API_KEY", "pp_26942c626f8aba137a287b708af53d6d62995629347228c5").strip()
+
 PLAYPAY_BASE = "https://playpay.uz/api/v1"
 
 # PlayPay Game ID
@@ -44,9 +54,16 @@ MOBILE_LEGENDS_GAME_ID = 54
 DEFAULT_MARKUP = Decimal("0")
 
 # Balans to'ldirish kartasi
-PAYMENT_CARD = "9860 6067 6078 9275 A.Abdurasul"
+PAYMENT_CARD = os.getenv("PAYMENT_CARD", "9860 6067 6078 9275 A.Abdurasul ").strip()
 
+# SQLite
 DB = "bot.db"
+
+# Render Web Service porti
+try:
+    PORT = int(os.getenv("PORT", "10000"))
+except (ValueError, TypeError):
+    PORT = 10000
 
 
 # ============================================================
@@ -62,10 +79,71 @@ log = logging.getLogger(__name__)
 
 
 # ============================================================
+# RENDER HEALTH SERVER
+# ============================================================
+
+class HealthHandler(BaseHTTPRequestHandler):
+
+    def do_GET(self):
+
+        self.send_response(200)
+
+        self.send_header(
+            "Content-Type",
+            "text/plain; charset=utf-8"
+        )
+
+        self.end_headers()
+
+        self.wfile.write(
+            b"PLAYPAY DONAT BOT OK"
+        )
+
+    def do_HEAD(self):
+
+        self.send_response(200)
+
+        self.send_header(
+            "Content-Type",
+            "text/plain; charset=utf-8"
+        )
+
+        self.end_headers()
+
+    def log_message(self, format, *args):
+
+        return
+
+
+def start_health_server():
+
+    try:
+
+        server = HTTPServer(
+            ("0.0.0.0", PORT),
+            HealthHandler
+        )
+
+        log.info(
+            "Render HTTP server ishga tushdi: 0.0.0.0:%s",
+            PORT
+        )
+
+        server.serve_forever()
+
+    except Exception:
+
+        log.exception(
+            "HTTP health server xatosi"
+        )
+
+
+# ============================================================
 # DATABASE
 # ============================================================
 
 def conn():
+
     c = sqlite3.connect(
         DB,
         timeout=30
@@ -73,8 +151,13 @@ def conn():
 
     c.row_factory = sqlite3.Row
 
-    c.execute("PRAGMA journal_mode=WAL")
-    c.execute("PRAGMA foreign_keys=ON")
+    c.execute(
+        "PRAGMA journal_mode=WAL"
+    )
+
+    c.execute(
+        "PRAGMA foreign_keys=ON"
+    )
 
     return c
 
@@ -192,7 +275,10 @@ def set_default(key, value):
         (key,value)
         VALUES (?,?)
         """,
-        (key, str(value))
+        (
+            key,
+            str(value)
+        )
     )
 
     c.commit()
@@ -227,7 +313,10 @@ def set_setting(key, value):
         (key,value)
         VALUES (?,?)
         """,
-        (key, str(value))
+        (
+            key,
+            str(value)
+        )
     )
 
     c.commit()
@@ -312,7 +401,11 @@ def get_balance(uid):
 
     c.close()
 
-    return Decimal(str(r["balance"])) if r else Decimal("0")
+    return (
+        Decimal(str(r["balance"]))
+        if r
+        else Decimal("0")
+    )
 
 
 def add_balance(
@@ -382,8 +475,11 @@ def api_get(path, params=None):
         )
 
         try:
+
             data = r.json()
+
         except Exception:
+
             data = {
                 "ok": False,
                 "error": r.text
@@ -400,7 +496,9 @@ def api_get(path, params=None):
 
     except Exception as e:
 
-        log.exception("PlayPay GET xatosi")
+        log.exception(
+            "PlayPay GET xatosi"
+        )
 
         return 0, {
             "ok": False,
@@ -414,7 +512,9 @@ def api_post(path, body):
 
         headers = {
             **api_headers(),
-            "Idempotency-Key": str(uuid.uuid4())
+            "Idempotency-Key": str(
+                uuid.uuid4()
+            )
         }
 
         r = requests.post(
@@ -425,8 +525,11 @@ def api_post(path, body):
         )
 
         try:
+
             data = r.json()
+
         except Exception:
+
             data = {
                 "ok": False,
                 "error": r.text
@@ -443,7 +546,9 @@ def api_post(path, body):
 
     except Exception as e:
 
-        log.exception("PlayPay POST xatosi")
+        log.exception(
+            "PlayPay POST xatosi"
+        )
 
         return 0, {
             "ok": False,
@@ -453,10 +558,16 @@ def api_post(path, body):
 
 def get_games_api():
 
-    status, data = api_get("/games")
+    status, data = api_get(
+        "/games"
+    )
 
     if data.get("ok"):
-        return data.get("games", [])
+
+        return data.get(
+            "games",
+            []
+        )
 
     log.error(
         "PlayPay /games xatosi | status=%s | data=%s",
@@ -477,6 +588,7 @@ def get_packages_api(game_id):
     )
 
     if data.get("ok"):
+
         return data
 
     log.error(
@@ -498,7 +610,9 @@ def get_playpay_order(order_id):
 
 def get_playpay_balance():
 
-    return api_get("/balance")
+    return api_get(
+        "/balance"
+    )
 
 
 # ============================================================
@@ -508,16 +622,24 @@ def get_playpay_balance():
 def calc_sale_price(api_uzs):
 
     try:
-        price = Decimal(str(api_uzs))
+
+        price = Decimal(
+            str(api_uzs)
+        )
+
     except Exception:
+
         price = Decimal("0")
 
     sale = price * (
-        Decimal("1") +
+        Decimal("1")
+        +
         DEFAULT_MARKUP / Decimal("100")
     )
 
-    return sale.quantize(Decimal("1"))
+    return sale.quantize(
+        Decimal("1")
+    )
 
 
 # ============================================================
@@ -552,8 +674,12 @@ def save_game(game):
                 "id_label",
                 "Player ID"
             ),
-            1 if game.get("requires_server") else 0,
-            1 if game.get("amount_based") else 0,
+            1 if game.get(
+                "requires_server"
+            ) else 0,
+            1 if game.get(
+                "amount_based"
+            ) else 0,
             1,
             datetime.now().isoformat()
         )
@@ -589,20 +715,38 @@ def save_package(
     ) or {}
 
     try:
+
         usd = Decimal(
-            str(price.get("usd", "0"))
+            str(
+                price.get(
+                    "usd",
+                    "0"
+                )
+            )
         )
+
     except Exception:
+
         usd = Decimal("0")
 
     try:
+
         uzs = Decimal(
-            str(price.get("amount", "0"))
+            str(
+                price.get(
+                    "amount",
+                    "0"
+                )
+            )
         )
+
     except Exception:
+
         uzs = Decimal("0")
 
-    sale_price = calc_sale_price(uzs)
+    sale_price = calc_sale_price(
+        uzs
+    )
 
     c = conn()
 
@@ -626,7 +770,10 @@ def save_package(
             game_id,
             paket_id,
             game_name,
-            package.get("name", "Paket"),
+            package.get(
+                "name",
+                "Paket"
+            ),
             float(usd),
             float(uzs),
             float(sale_price),
@@ -661,7 +808,9 @@ def ensure_pubg():
         FROM games
         WHERE game_id=?
         """,
-        (PUBG_GAME_ID,)
+        (
+            PUBG_GAME_ID,
+        )
     ).fetchone()
 
     c.close()
@@ -691,7 +840,9 @@ def ensure_mobile_legends():
         FROM games
         WHERE game_id=?
         """,
-        (MOBILE_LEGENDS_GAME_ID,)
+        (
+            MOBILE_LEGENDS_GAME_ID,
+        )
     ).fetchone()
 
     c.close()
@@ -709,6 +860,7 @@ def ensure_mobile_legends():
 
 # ============================================================
 # CATALOG SYNC
+# FAQAT ADMIN 🔄 KATALOG ORQALI ISHLAYDI
 # ============================================================
 
 def sync_catalog():
@@ -721,8 +873,6 @@ def sync_catalog():
 
     if not games_api:
 
-        # API /games ayrim holatda 141/3 ni qaytarmasa
-        # maxsus o'yinlarni baribir tekshiramiz
         ensure_pubg()
         ensure_mobile_legends()
 
@@ -733,7 +883,9 @@ def sync_catalog():
             MOBILE_LEGENDS_GAME_ID
         ):
 
-            data = get_packages_api(gid)
+            data = get_packages_api(
+                gid
+            )
 
             if not data:
                 continue
@@ -742,9 +894,11 @@ def sync_catalog():
 
             name = data.get(
                 "game_name",
-                "PUBG Mobile"
-                if gid == PUBG_GAME_ID
-                else "Mobile Legends"
+                (
+                    "PUBG Mobile"
+                    if gid == PUBG_GAME_ID
+                    else "Mobile Legends"
+                )
             )
 
             save_game({
@@ -769,7 +923,9 @@ def sync_catalog():
                 []
             ):
 
-                if not package.get("paket_id"):
+                if not package.get(
+                    "paket_id"
+                ):
                     continue
 
                 save_package(
@@ -782,15 +938,18 @@ def sync_catalog():
 
         if not special_ok:
 
-            return False, "PlayPay katalogi olinmadi."
+            return (
+                False,
+                "PlayPay katalogi olinmadi."
+            )
 
-        return True, (
+        return (
+            True,
             f"✅ {game_count} ta o'yin, "
             f"{package_count} ta paket yangilandi."
         )
 
-    # Eski o'yin va paketlarni yashiramiz.
-    # O'chirmaymiz, chunki eski buyurtmalar tarixda qolishi kerak.
+    # Eski o'yinlarni yashiramiz
     c = conn()
 
     c.execute(
@@ -804,9 +963,9 @@ def sync_catalog():
     c.commit()
     c.close()
 
-    # --------------------------------------------------------
-    # PLAYPAY'DAGI BARCHA O'YINLAR
-    # --------------------------------------------------------
+    # ========================================================
+    # PLAYPAY O'YINLARI
+    # ========================================================
 
     for game_data in games_api:
 
@@ -822,8 +981,9 @@ def sync_catalog():
 
         try:
 
-            # PlayPay'dan kelgan o'yinni saqlaymiz
-            save_game(game_data)
+            save_game(
+                game_data
+            )
 
             game_count += 1
             synced_ids.add(gid)
@@ -833,7 +993,9 @@ def sync_catalog():
                 str(gid)
             )
 
-            data = get_packages_api(gid)
+            data = get_packages_api(
+                gid
+            )
 
             if not data:
                 continue
@@ -843,7 +1005,9 @@ def sync_catalog():
                 []
             ):
 
-                if not package.get("paket_id"):
+                if not package.get(
+                    "paket_id"
+                ):
                     continue
 
                 save_package(
@@ -861,9 +1025,9 @@ def sync_catalog():
                 gid
             )
 
-    # --------------------------------------------------------
-    # PUBG 141 — majburiy
-    # --------------------------------------------------------
+    # ========================================================
+    # PUBG 141
+    # ========================================================
 
     try:
 
@@ -891,14 +1055,18 @@ def sync_catalog():
                 })
 
                 game_count += 1
-                synced_ids.add(PUBG_GAME_ID)
+                synced_ids.add(
+                    PUBG_GAME_ID
+                )
 
                 for package in data.get(
                     "packages",
                     []
                 ):
 
-                    if not package.get("paket_id"):
+                    if not package.get(
+                        "paket_id"
+                    ):
                         continue
 
                     save_package(
@@ -915,10 +1083,9 @@ def sync_catalog():
             "PUBG 141 sync xatosi"
         )
 
-
-    # --------------------------------------------------------
-    # MOBILE LEGENDS 3 — majburiy
-    # --------------------------------------------------------
+    # ========================================================
+    # MOBILE LEGENDS 54
+    # ========================================================
 
     try:
 
@@ -955,7 +1122,9 @@ def sync_catalog():
                     []
                 ):
 
-                    if not package.get("paket_id"):
+                    if not package.get(
+                        "paket_id"
+                    ):
                         continue
 
                     save_package(
@@ -969,16 +1138,18 @@ def sync_catalog():
     except Exception:
 
         log.exception(
-            "Mobile Legends 3 sync xatosi"
+            "Mobile Legends 54 sync xatosi"
         )
 
     if game_count == 0:
 
-        return False, (
+        return (
+            False,
             "PlayPay katalogi olinmadi."
         )
 
-    return True, (
+    return (
+        True,
         f"✅ {game_count} ta o'yin, "
         f"{package_count} ta paket yangilandi."
     )
@@ -998,10 +1169,6 @@ def main_menu():
             )
         ],
         [
-            InlineKeyboardButton(
-                "💰 Balans",
-                callback_data="balance"
-            ),
             InlineKeyboardButton(
                 "💳 Balans to'ldirish",
                 callback_data="deposit"
@@ -1104,15 +1271,19 @@ async def start(update, context):
         update.effective_user
     )
 
+    if not update.message:
+        return
+
     await update.message.reply_text(
         "Assalomu Aleykum 👋\n\n"
-        "🎮 Donuz botiga xush kelibsiz!",
+        "🎮 Donat botiga xush kelibsiz!",
         reply_markup=main_menu()
     )
 
 
 # ============================================================
 # GAMES
+# BU YERDA API SYNC YO'Q
 # ============================================================
 
 async def games(update, context):
@@ -1123,12 +1294,6 @@ async def games(update, context):
         await q.answer()
     except Exception:
         pass
-
-    await q.message.reply_text(
-        "kuting"
-    )
-
-    ok, msg = sync_catalog()
 
     c = conn()
 
@@ -1157,7 +1322,8 @@ async def games(update, context):
 
         await q.message.reply_text(
             "❌ O'yinlar topilmadi.\n\n"
-            + str(msg)
+            "👑 Admin paneldan 🔄 Katalog "
+            "tugmasini bosib katalogni yangilang."
         )
 
         return
@@ -1183,6 +1349,8 @@ async def games(update, context):
 
 # ============================================================
 # GAME PACKAGES
+# BU YERDA API'DAN OLINMAYDI
+# FAQAT DATABASE'DAGI KATALOG ISHLATILADI
 # ============================================================
 
 async def game(update, context):
@@ -1192,7 +1360,10 @@ async def game(update, context):
     try:
 
         game_id = int(
-            q.data.split(":", 1)[1]
+            q.data.split(
+                ":",
+                1
+            )[1]
         )
 
     except Exception:
@@ -1208,68 +1379,6 @@ async def game(update, context):
     except Exception:
         pass
 
-    # Mobile Legends metadata
-    if game_id == MOBILE_LEGENDS_GAME_ID:
-        ensure_mobile_legends()
-
-    # PUBG metadata
-    if game_id == PUBG_GAME_ID:
-        ensure_pubg()
-
-    data = get_packages_api(game_id)
-
-    if not data:
-
-        if game_id == PUBG_GAME_ID:
-
-            await q.message.reply_text(
-                "❌ PUBG Mobile paketlarini "
-                "PlayPay API dan olib bo'lmadi.\n\n"
-                "🆔 Game ID: 141"
-            )
-
-        elif game_id == MOBILE_LEGENDS_GAME_ID:
-
-            await q.message.reply_text(
-                "❌ Mobile Legends paketlarini "
-                "PlayPay API dan olib bo'lmadi.\n\n"
-                "🆔 Game ID: 3"
-            )
-
-        else:
-
-            await q.message.reply_text(
-                "❌ Paketlar olinmadi."
-            )
-
-        return
-
-    game_name = data.get(
-        "game_name",
-        ""
-    )
-
-    if not game_name:
-
-        c = conn()
-
-        r = c.execute(
-            """
-            SELECT name
-            FROM games
-            WHERE game_id=?
-            """,
-            (game_id,)
-        ).fetchone()
-
-        c.close()
-
-        game_name = (
-            r["name"]
-            if r
-            else str(game_id)
-        )
-
     c = conn()
 
     g = c.execute(
@@ -1277,13 +1386,46 @@ async def game(update, context):
         SELECT *
         FROM games
         WHERE game_id=?
+          AND active=1
         """,
         (game_id,)
     ).fetchone()
 
+    rows = c.execute(
+        """
+        SELECT *
+        FROM products
+        WHERE game_id=?
+          AND active=1
+        ORDER BY paket_id
+        """,
+        (game_id,)
+    ).fetchall()
+
     c.close()
 
-    # Agar maxsus o'yin bo'lsa metadata majburan to'g'ri bo'ladi
+    if not g:
+
+        await q.message.reply_text(
+            "❌ O'yin topilmadi.\n\n"
+            "👑 Admin paneldan 🔄 Katalog "
+            "tugmasini bosib katalogni yangilang."
+        )
+
+        return
+
+    if not rows:
+
+        await q.message.reply_text(
+            f"❌ {g['name']} uchun paketlar topilmadi.\n\n"
+            "👑 Admin paneldan 🔄 Katalog "
+            "tugmasini bosib katalogni yangilang."
+        )
+
+        return
+
+    game_name = g["name"]
+
     if game_id == PUBG_GAME_ID:
 
         id_label = "Player ID"
@@ -1298,14 +1440,11 @@ async def game(update, context):
 
         id_label = (
             g["id_label"]
-            if g
-            else "Player ID"
+            or "Player ID"
         )
 
-        requires_server = (
-            bool(g["requires_server"])
-            if g
-            else False
+        requires_server = bool(
+            g["requires_server"]
         )
 
     context.user_data.update({
@@ -1317,54 +1456,24 @@ async def game(update, context):
 
     kb = []
 
-    for off in data.get(
-        "packages",
-        []
-    ):
+    for r in rows:
 
         try:
 
-            paket_id = int(
-                off["paket_id"]
+            sale = Decimal(
+                str(r["sale_price"])
             )
 
         except Exception:
 
             continue
-
-        try:
-
-            price = Decimal(
-                str(
-                    (
-                        off.get("price")
-                        or {}
-                    ).get(
-                        "amount",
-                        "0"
-                    )
-                )
-            )
-
-        except Exception:
-
-            continue
-
-        sale = calc_sale_price(price)
-
-        # Eski narxni API narxiga almashtiramiz
-        save_package(
-            game_id,
-            game_name,
-            off
-        )
 
         kb.append([
             InlineKeyboardButton(
-                f"{off.get('name','Paket')} — "
+                f"{r['package_name']} — "
                 f"{sale:,.0f} so'm",
                 callback_data=(
-                    f"o:{game_id}:{paket_id}"
+                    f"o:{game_id}:{r['paket_id']}"
                 )
             )
         ])
@@ -1388,6 +1497,7 @@ async def game(update, context):
 
 # ============================================================
 # OFFER
+# BU YERDA API FALLBACK YO'Q
 # ============================================================
 
 async def offer(update, context):
@@ -1438,13 +1548,13 @@ async def offer(update, context):
         SELECT *
         FROM games
         WHERE game_id=?
+          AND active=1
         """,
         (game_id,)
     ).fetchone()
 
     c.close()
 
-    # Special metadata
     if game_id == MOBILE_LEGENDS_GAME_ID:
 
         id_label = "User ID"
@@ -1471,46 +1581,10 @@ async def offer(update, context):
 
     if not r:
 
-        data = get_packages_api(game_id)
-
-        if data:
-
-            for off in data.get(
-                "packages",
-                []
-            ):
-
-                try:
-
-                    off_id = int(
-                        off.get(
-                            "paket_id",
-                            -1
-                        )
-                    )
-
-                except Exception:
-
-                    continue
-
-                if off_id == paket_id:
-
-                    save_package(
-                        game_id,
-                        data.get(
-                            "game_name",
-                            str(game_id)
-                        ),
-                        off
-                    )
-
-                    return await offer(
-                        update,
-                        context
-                    )
-
         await q.message.reply_text(
-            "❌ Paket topilmadi."
+            "❌ Paket katalogda topilmadi.\n\n"
+            "👑 Admin paneldan 🔄 Katalog "
+            "tugmasini bosib katalogni yangilang."
         )
 
         return
@@ -1526,7 +1600,9 @@ async def offer(update, context):
         ],
 
         "price": Decimal(
-            str(r["sale_price"])
+            str(
+                r["sale_price"]
+            )
         ),
 
         "id_label": id_label,
@@ -1550,7 +1626,10 @@ async def offer(update, context):
 # CONFIRM ORDER
 # ============================================================
 
-async def confirm_order(message, context):
+async def confirm_order(
+    message,
+    context
+):
 
     price = Decimal(
         str(
@@ -1589,8 +1668,12 @@ async def confirm_order(message, context):
         ):
 
             discount = (
-                price *
-                Decimal(str(r["percent"])) /
+                price
+                *
+                Decimal(
+                    str(r["percent"])
+                )
+                /
                 Decimal("100")
             )
 
@@ -1781,17 +1864,12 @@ async def confirm(update, context):
 
         return
 
-    # --------------------------------------------------------
-    # PLAYPAY ORDER BODY
-    # --------------------------------------------------------
-
     body = {
         "game_id": int(game_id),
         "paket_id": int(paket_id),
         "player_id": player_id
     }
 
-    # Mobile Legends va server talab qiladigan o'yinlar
     if requires_server:
 
         body["server_id"] = server_id
@@ -1801,9 +1879,9 @@ async def confirm(update, context):
         body
     )
 
-    # --------------------------------------------------------
-    # BALANSNI USHLAB TURAMIZ
-    # --------------------------------------------------------
+    # ========================================================
+    # BALANSNI USHLAB TURISH
+    # ========================================================
 
     add_balance(
         uid,
@@ -1812,11 +1890,12 @@ async def confirm(update, context):
         f"PlayPay buyurtma: {game_id}/{paket_id}"
     )
 
-    # --------------------------------------------------------
+    # ========================================================
     # PLAYPAY
-    # --------------------------------------------------------
+    # ========================================================
 
-    status, data = api_post(
+    status, data = await asyncio.to_thread(
+        api_post,
         "/order",
         body
     )
@@ -1969,9 +2048,9 @@ async def confirm(update, context):
         reply_markup=main_menu()
     )
 
-    # --------------------------------------------------------
+    # ========================================================
     # ADMIN
-    # --------------------------------------------------------
+    # ========================================================
 
     try:
 
@@ -1982,7 +2061,8 @@ async def confirm(update, context):
             f"🎮 Game ID: {game_id}\n"
             f"📦 {context.user_data.get('offer_name','Paket')}\n"
             f"🆔 {id_label}: {player_id}\n"
-            + (
+            +
+            (
                 f"🌐 Server ID: {server_id}\n"
                 if requires_server
                 else ""
@@ -2001,9 +2081,9 @@ async def confirm(update, context):
             e
         )
 
-    # --------------------------------------------------------
+    # ========================================================
     # PROMO
-    # --------------------------------------------------------
+    # ========================================================
 
     promo = context.user_data.get(
         "promo_code"
@@ -2110,8 +2190,8 @@ async def deposit(update, context):
 
     await q.message.reply_text(
         "💳 Balans to'ldirish\n\n"
-        f"Karta: `9860 6067 6078 9275 A.Abdurasul`\n\n"
-        "tolov qilib bob qancha tashganzni yozing\n"
+        f"Karta: `{card}`\n\n"
+        "Qancha pul tashlamoqchisiz?\n"
         "Masalan: 50000",
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup([
@@ -2141,9 +2221,9 @@ async def text_handler(update, context):
         "state"
     )
 
-    # --------------------------------------------------------
+    # ========================================================
     # DEPOSIT
-    # --------------------------------------------------------
+    # ========================================================
 
     if state == "deposit_amount":
 
@@ -2162,7 +2242,7 @@ async def text_handler(update, context):
 
             return
 
-        if amount <= 1000:
+        if amount <= 0:
 
             await update.message.reply_text(
                 "❌ Noto'g'ri summa."
@@ -2176,7 +2256,7 @@ async def text_handler(update, context):
         })
 
         card = get_setting(
-            "PAYMENT_CARD",
+            "payment_card",
             PAYMENT_CARD
         )
 
@@ -2185,9 +2265,9 @@ async def text_handler(update, context):
             f"`{card}`\n\n"
             f"💰 Tashlaydigan summa: "
             f"{amount:,.0f} so'm\n\n"
-            ".\n"
-            "📸 chek rasmini yuboring.\n\n"
-            "Chek qabul qilindi bot tomdan tekshrgandan song hisobingzga balans qoshladi",
+            "⚠️ Aynan shu summani tashlang.\n"
+            "To'lovdan keyin 📸 chek rasmini yuboring.\n\n"
+            "Chek admin tomonidan tekshiriladi.",
             parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup([
                 [
@@ -2201,9 +2281,9 @@ async def text_handler(update, context):
 
         return
 
-    # --------------------------------------------------------
+    # ========================================================
     # PROMO
-    # --------------------------------------------------------
+    # ========================================================
 
     if state == "promo":
 
@@ -2279,9 +2359,9 @@ async def text_handler(update, context):
 
         return
 
-    # --------------------------------------------------------
+    # ========================================================
     # PLAYER / USER ID
-    # --------------------------------------------------------
+    # ========================================================
 
     if state == "player_id":
 
@@ -2324,9 +2404,9 @@ async def text_handler(update, context):
 
         return
 
-    # --------------------------------------------------------
+    # ========================================================
     # SERVER ID
-    # --------------------------------------------------------
+    # ========================================================
 
     if state == "server_id":
 
@@ -2387,7 +2467,9 @@ async def photo_handler(update, context):
 
         return
 
-    photo_id = update.message.photo[-1].file_id
+    photo_id = (
+        update.message.photo[-1].file_id
+    )
 
     c = conn()
 
@@ -2481,7 +2563,9 @@ async def payment_action(update, context):
     )
 
     try:
+
         pid = int(pid_text)
+
     except Exception:
 
         await q.message.reply_text(
@@ -2584,7 +2668,9 @@ async def profile(update, context):
         FROM users
         WHERE user_id=?
         """,
-        (q.from_user.id,)
+        (
+            q.from_user.id,
+        )
     ).fetchone()
 
     orders = c.execute(
@@ -2593,7 +2679,9 @@ async def profile(update, context):
         FROM orders
         WHERE user_id=?
         """,
-        (q.from_user.id,)
+        (
+            q.from_user.id,
+        )
     ).fetchone()["x"]
 
     c.close()
@@ -2635,7 +2723,9 @@ async def orders_cb(update, context):
         ORDER BY id DESC
         LIMIT 20
         """,
-        (q.from_user.id,)
+        (
+            q.from_user.id,
+        )
     ).fetchall()
 
     c.close()
@@ -2655,10 +2745,13 @@ async def orders_cb(update, context):
         fields = {}
 
         try:
+
             fields = json.loads(
                 r["fields_json"] or "{}"
             )
+
         except Exception:
+
             pass
 
         server = fields.get(
@@ -2775,7 +2868,9 @@ def sum_history(
             WHERE created_at>=?
               AND amount {op} 0
             """,
-            (start,)
+            (
+                start,
+            )
         ).fetchone()
 
     c.close()
@@ -2821,17 +2916,21 @@ def period_stats(
 
     income = sum_history(
         start.isoformat(),
-        end.isoformat()
-        if end
-        else None,
+        (
+            end.isoformat()
+            if end
+            else None
+        ),
         True
     )
 
     outgoing = sum_history(
         start.isoformat(),
-        end.isoformat()
-        if end
-        else None,
+        (
+            end.isoformat()
+            if end
+            else None
+        ),
         False
     )
 
@@ -3135,10 +3234,13 @@ async def admin_orders(update, context):
         fields = {}
 
         try:
+
             fields = json.loads(
                 r["fields_json"] or "{}"
             )
+
         except Exception:
+
             pass
 
         text += (
@@ -3219,7 +3321,9 @@ async def admin_prices(update, context):
 
     await q.message.reply_text(
         "💵 O'zgartiriladigan paketni tanlang:",
-        reply_markup=InlineKeyboardMarkup(kb)
+        reply_markup=InlineKeyboardMarkup(
+            kb
+        )
     )
 
 
@@ -3228,6 +3332,12 @@ async def price_callback(update, context):
     q = update.callback_query
 
     if q.from_user.id != ADMIN_ID:
+
+        await q.answer(
+            "Siz admin emassiz.",
+            show_alert=True
+        )
+
         return
 
     try:
@@ -3359,6 +3469,7 @@ async def admin_post_start(update, context):
 async def admin_text_handler(update, context):
 
     if update.effective_user.id != ADMIN_ID:
+
         return False
 
     state = context.user_data.get(
@@ -3368,16 +3479,19 @@ async def admin_text_handler(update, context):
     text = update.message.text.strip()
 
     if not state:
+
         return False
 
-    # --------------------------------------------------------
+    # ========================================================
     # BALANCE USER
-    # --------------------------------------------------------
+    # ========================================================
 
     if state == "balance_user":
 
         try:
+
             uid = int(text)
+
         except Exception:
 
             await update.message.reply_text(
@@ -3410,9 +3524,9 @@ async def admin_text_handler(update, context):
 
         return True
 
-    # --------------------------------------------------------
+    # ========================================================
     # BALANCE AMOUNT
-    # --------------------------------------------------------
+    # ========================================================
 
     if state == "balance_amount":
 
@@ -3458,13 +3572,17 @@ async def admin_text_handler(update, context):
         add_balance(
             uid,
             amount,
-            "admin_add"
-            if amount > 0
-            else "admin_remove",
+            (
+                "admin_add"
+                if amount > 0
+                else "admin_remove"
+            ),
             "Admin tomonidan balans o'zgartirildi"
         )
 
-        new_balance = get_balance(uid)
+        new_balance = get_balance(
+            uid
+        )
 
         try:
 
@@ -3478,6 +3596,7 @@ async def admin_text_handler(update, context):
             )
 
         except Exception:
+
             pass
 
         await update.message.reply_text(
@@ -3494,9 +3613,9 @@ async def admin_text_handler(update, context):
 
         return True
 
-    # --------------------------------------------------------
+    # ========================================================
     # APPROVE PAYMENT
-    # --------------------------------------------------------
+    # ========================================================
 
     if state == "approve_payment":
 
@@ -3541,6 +3660,7 @@ async def admin_text_handler(update, context):
         if not payment:
 
             c.close()
+
             context.user_data.clear()
 
             await update.message.reply_text(
@@ -3552,6 +3672,7 @@ async def admin_text_handler(update, context):
         if payment["status"] != "pending":
 
             c.close()
+
             context.user_data.clear()
 
             await update.message.reply_text(
@@ -3601,6 +3722,7 @@ async def admin_text_handler(update, context):
             )
 
         except Exception:
+
             pass
 
         await update.message.reply_text(
@@ -3614,9 +3736,9 @@ async def admin_text_handler(update, context):
 
         return True
 
-    # --------------------------------------------------------
+    # ========================================================
     # SET PRICE
-    # --------------------------------------------------------
+    # ========================================================
 
     if state == "set_price":
 
@@ -3643,9 +3765,11 @@ async def admin_text_handler(update, context):
 
             return True
 
-        game_id, paket_id = context.user_data[
-            "price_key"
-        ]
+        game_id, paket_id = (
+            context.user_data[
+                "price_key"
+            ]
+        )
 
         c = conn()
 
@@ -3678,9 +3802,9 @@ async def admin_text_handler(update, context):
 
         return True
 
-    # --------------------------------------------------------
+    # ========================================================
     # CARD
-    # --------------------------------------------------------
+    # ========================================================
 
     if state == "set_card":
 
@@ -3699,9 +3823,9 @@ async def admin_text_handler(update, context):
 
         return True
 
-    # --------------------------------------------------------
+    # ========================================================
     # PROMO ADMIN
-    # --------------------------------------------------------
+    # ========================================================
 
     if state == "promo_admin":
 
@@ -3772,9 +3896,9 @@ async def admin_text_handler(update, context):
 
         return True
 
-    # --------------------------------------------------------
+    # ========================================================
     # POST CONTENT
-    # --------------------------------------------------------
+    # ========================================================
 
     if state == "post_content":
 
@@ -3794,9 +3918,9 @@ async def admin_text_handler(update, context):
 
         return True
 
-    # --------------------------------------------------------
+    # ========================================================
     # TEXT POST
-    # --------------------------------------------------------
+    # ========================================================
 
     if (
         state == "post_wait_media"
@@ -3893,6 +4017,7 @@ async def admin_media_handler(
 ):
 
     if update.effective_user.id != ADMIN_ID:
+
         return
 
     if context.user_data.get(
@@ -3913,7 +4038,11 @@ async def admin_media_handler(
             await send_channel_post(
                 context,
                 text=caption,
-                photo_id=update.message.photo[-1].file_id
+                photo_id=(
+                    update.message
+                    .photo[-1]
+                    .file_id
+                )
             )
 
         elif update.message.animation:
@@ -3921,7 +4050,11 @@ async def admin_media_handler(
             await send_channel_post(
                 context,
                 text=caption,
-                animation_id=update.message.animation.file_id
+                animation_id=(
+                    update.message
+                    .animation
+                    .file_id
+                )
             )
 
         elif update.message.video:
@@ -3929,7 +4062,11 @@ async def admin_media_handler(
             await send_channel_post(
                 context,
                 text=caption,
-                video_id=update.message.video.file_id
+                video_id=(
+                    update.message
+                    .video
+                    .file_id
+                )
             )
 
         else:
@@ -3977,11 +4114,13 @@ async def check_orders(context):
 
         try:
 
-            status, data = get_playpay_order(
+            status, data = await asyncio.to_thread(
+                get_playpay_order,
                 r["playpay_order_id"]
             )
 
             if not data.get("ok"):
+
                 continue
 
             order = data.get(
@@ -3995,6 +4134,7 @@ async def check_orders(context):
             )
 
             if new_status == r["status"]:
+
                 continue
 
             c = conn()
@@ -4039,9 +4179,12 @@ async def rating_callback(update, context):
     q = update.callback_query
 
     if q.from_user.id != ADMIN_ID:
+
         return
 
-    period = q.data.split(":")[1]
+    period = q.data.split(
+        ":"
+    )[1]
 
     days = (
         7
@@ -4076,7 +4219,9 @@ async def rating_callback(update, context):
         ORDER BY spent DESC
         LIMIT 20
         """,
-        (start,)
+        (
+            start,
+        )
     ).fetchall()
 
     c.close()
@@ -4096,6 +4241,7 @@ async def rating_callback(update, context):
     for r in rows:
 
         if r["spent"] <= 0:
+
             continue
 
         text += (
@@ -4111,6 +4257,7 @@ async def rating_callback(update, context):
         n += 1
 
     if n == 1:
+
         text += "Hali ma'lumot yo'q."
 
     await q.message.reply_text(
@@ -4127,6 +4274,7 @@ async def admin_callback(update, context):
     q = update.callback_query
 
     if q.from_user.id != ADMIN_ID:
+
         return
 
     d = q.data
@@ -4216,7 +4364,9 @@ async def admin_callback(update, context):
 
     elif d == "adm_playpay_balance":
 
-        status, data = get_playpay_balance()
+        status, data = await asyncio.to_thread(
+            get_playpay_balance
+        )
 
         if data.get("ok"):
 
@@ -4240,9 +4390,19 @@ async def admin_callback(update, context):
                 f"{data.get('error','API xatosi')}"
             )
 
+    # ========================================================
+    # FAQAT ADMIN KATALOG YANGILAYDI
+    # ========================================================
+
     elif d == "a_sync":
 
-        ok, result = sync_catalog()
+        await q.message.reply_text(
+            "🔄 PlayPay katalogi yangilanmoqda..."
+        )
+
+        ok, result = await asyncio.to_thread(
+            sync_catalog
+        )
 
         await q.message.reply_text(
             f"{'✅' if ok else '❌'} {result}",
@@ -4278,6 +4438,8 @@ async def callback_router(update, context):
                 context
             )
 
+        # Eski callback saqlangan.
+        # Asosiy menyuda endi Balans tugmasi yo'q.
         elif d == "balance":
 
             await balance_cb(
@@ -4390,6 +4552,7 @@ async def callback_router(update, context):
             )
 
         except Exception:
+
             pass
 
 
@@ -4405,7 +4568,8 @@ async def media_router(update, context):
             context.user_data.get(
                 "admin_state"
             )
-            == "post_wait_media"
+            ==
+            "post_wait_media"
         ):
 
             await admin_media_handler(
@@ -4437,6 +4601,7 @@ async def text_router(update, context):
         )
 
         if handled:
+
             return
 
     await text_handler(
@@ -4464,50 +4629,71 @@ async def cancel_command(update, context):
 
 
 # ============================================================
+# ERROR HANDLER
+# ============================================================
+
+async def error_handler(
+    update,
+    context
+):
+
+    log.exception(
+        "Unhandled exception:",
+        exc_info=context.error
+    )
+
+
+# ============================================================
 # MAIN
 # ============================================================
 
 def main():
+
+    # --------------------------------------------------------
+    # RENDER PORT SERVER
+    # --------------------------------------------------------
+
+    health_thread = threading.Thread(
+        target=start_health_server,
+        daemon=True
+    )
+
+    health_thread.start()
+
+    # --------------------------------------------------------
+    # DATABASE
+    # --------------------------------------------------------
 
     init_db()
 
     ensure_pubg()
     ensure_mobile_legends()
 
+    # --------------------------------------------------------
+    # ENV TEKSHIRISH
+    # --------------------------------------------------------
+
     if not BOT_TOKEN:
 
         raise SystemExit(
-            "❌ BOT_TOKEN yozilmagan."
+            "❌ BOT_TOKEN Environment Variable yozilmagan."
         )
 
     if not ADMIN_ID:
 
         raise SystemExit(
-            "❌ ADMIN_ID yozilmagan."
+            "❌ ADMIN_ID Environment Variable yozilmagan."
         )
 
     if not PLAYPAY_API_KEY:
 
         raise SystemExit(
-            "❌ PLAYPAY_API_KEY yozilmagan."
+            "❌ PLAYPAY_API_KEY Environment Variable yozilmagan."
         )
 
-    # Dastur ishga tushganda katalogni yangilash
-    try:
-
-        ok, msg = sync_catalog()
-
-        log.info(
-            "Startup catalog: %s | %s",
-            ok,
-            msg
-        )
-
-    except Exception:
-
-        log.exception(
-            "Startup catalog sync failed"
-        )
+    # --------------------------------------------------------
+    # TELEGRAM APP
+    # --------------------------------------------------------
 
     app = (
         Application
@@ -4516,7 +4702,15 @@ def main():
         .build()
     )
 
-    # Commands
+    # Error handler
+    app.add_error_handler(
+        error_handler
+    )
+
+    # --------------------------------------------------------
+    # COMMANDS
+    # --------------------------------------------------------
+
     app.add_handler(
         CommandHandler(
             "start",
@@ -4538,14 +4732,20 @@ def main():
         )
     )
 
-    # Callback
+    # --------------------------------------------------------
+    # CALLBACK
+    # --------------------------------------------------------
+
     app.add_handler(
         CallbackQueryHandler(
             callback_router
         )
     )
 
-    # Media
+    # --------------------------------------------------------
+    # MEDIA
+    # --------------------------------------------------------
+
     app.add_handler(
         MessageHandler(
             filters.PHOTO
@@ -4557,7 +4757,10 @@ def main():
         )
     )
 
-    # Text
+    # --------------------------------------------------------
+    # TEXT
+    # --------------------------------------------------------
+
     app.add_handler(
         MessageHandler(
             filters.TEXT
@@ -4567,7 +4770,10 @@ def main():
         )
     )
 
-    # Order status
+    # --------------------------------------------------------
+    # ORDER STATUS
+    # --------------------------------------------------------
+
     if app.job_queue:
 
         app.job_queue.run_repeating(
@@ -4575,6 +4781,21 @@ def main():
             interval=30,
             first=30
         )
+
+    # ========================================================
+    # MUHIM:
+    # startup_catalog OLIB TASHLANDI.
+    #
+    # Bot ishga tushganda katalog API'dan yangilanmaydi.
+    #
+    # Katalog faqat:
+    # ADMIN -> 🔄 Katalog
+    # orqali sync qilinadi.
+    # ========================================================
+
+    # --------------------------------------------------------
+    # LOG
+    # --------------------------------------------------------
 
     print(
         "=============================="
@@ -4589,11 +4810,15 @@ def main():
     )
 
     print(
+        f"       HTTP PORT: {PORT}"
+    )
+
+    print(
         "       PUBG GAME ID: 141"
     )
 
     print(
-        "       MOBILE LEGENDS ID: 3"
+        "       MOBILE LEGENDS ID: 54"
     )
 
     print(
@@ -4601,11 +4826,25 @@ def main():
     )
 
     print(
+        "       CATALOG AUTO SYNC: OFF"
+    )
+
+    print(
         "=============================="
     )
 
-    app.run_polling()
+    # --------------------------------------------------------
+    # TELEGRAM POLLING
+    # --------------------------------------------------------
 
+    app.run_polling(
+        drop_pending_updates=True
+    )
+
+
+# ============================================================
+# RUN
+# ============================================================
 
 if __name__ == "__main__":
 
