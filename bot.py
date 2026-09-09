@@ -42,13 +42,16 @@ try:
 except (ValueError, TypeError):
     ADMIN_ID = 0
 
-PLAYPAY_API_KEY = os.getenv("PLAYPAY_API_KEY", "pp_26942c626f8aba137a287b708af53d6d62995629347228c5").strip()
+PLAYPAY_API_KEY = os.getenv("PLAYPAY_API_KEY", "pp_cba8469f7747fb0166865b3d6f9fba7ca4ccea237fd1710c").strip()
 
 PLAYPAY_BASE = "https://playpay.uz/api/v1"
 
 # PlayPay Game ID
 PUBG_GAME_ID = 141
 MOBILE_LEGENDS_GAME_ID = 54
+
+# Grand Mobile manual game
+GRAND_MOBILE_GAME_ID = 999
 
 # 0 = PlayPay API narxining o'zi
 DEFAULT_MARKUP = Decimal("0")
@@ -64,6 +67,34 @@ try:
     PORT = int(os.getenv("PORT", "10000"))
 except (ValueError, TypeError):
     PORT = 10000
+
+
+# ============================================================
+# GRAND MOBILE
+# ============================================================
+
+GRAND_MOBILE_DESCRIPTION = (
+    "Grand Mobile ID orqali narxlar 📱💸\n\n"
+    "odiy narx nechi X bolsa shuncha baravar ko'p tushadi.\n\n"
+    "Misol: 5X 1GC = 5 GC tushadi."
+)
+
+
+GRAND_MOBILE_PACKAGES = [
+    (1, "15 GC", 3000),
+    (2, "30 GC", 5500),
+    (3, "90 GC", 15500),
+    (4, "150 GC", 26000),
+    (5, "200 GC", 34000),
+    (6, "300 GC", 53000),
+    (7, "400 GC", 71500),
+    (8, "500 GC", 85000),
+    (9, "1000 GC", 169000),
+    (10, "1500 GC", 258000),
+    (11, "2000 GC", 345000),
+    (12, "2500 GC", 422000),
+    (13, "3000 GC", 519000),
+]
 
 
 # ============================================================
@@ -859,8 +890,79 @@ def ensure_mobile_legends():
 
 
 # ============================================================
+# GRAND MOBILE MANUAL
+# ============================================================
+
+def ensure_grand_mobile():
+
+    c = conn()
+
+    c.execute(
+        """
+        INSERT OR REPLACE INTO games
+        (
+            game_id,
+            name,
+            id_label,
+            requires_server,
+            amount_based,
+            active,
+            updated_at
+        )
+        VALUES (?,?,?,?,?,?,?)
+        """,
+        (
+            GRAND_MOBILE_GAME_ID,
+            "Grand Mobile",
+            "Grand Mobile ID",
+            0,
+            0,
+            1,
+            datetime.now().isoformat()
+        )
+    )
+
+    for paket_id, package_name, price in GRAND_MOBILE_PACKAGES:
+
+        c.execute(
+            """
+            INSERT OR REPLACE INTO products
+            (
+                game_id,
+                paket_id,
+                game_name,
+                package_name,
+                price_usd,
+                api_price_uzs,
+                sale_price,
+                active,
+                updated_at
+            )
+            VALUES (?,?,?,?,?,?,?,?,?)
+            """,
+            (
+                GRAND_MOBILE_GAME_ID,
+                paket_id,
+                "Grand Mobile",
+                package_name,
+                0,
+                price,
+                price,
+                1,
+                datetime.now().isoformat()
+            )
+        )
+
+    c.commit()
+    c.close()
+
+    log.info(
+        "Grand Mobile manual katalog saqlandi."
+    )
+
+
+# ============================================================
 # CATALOG SYNC
-# FAQAT ADMIN 🔄 KATALOG ORQALI ISHLAYDI
 # ============================================================
 
 def sync_catalog():
@@ -936,20 +1038,24 @@ def sync_catalog():
 
                 package_count += 1
 
+        # Grand Mobile manual doim saqlanadi
+        ensure_grand_mobile()
+
         if not special_ok:
 
             return (
                 False,
-                "PlayPay katalogi olinmadi."
+                "PlayPay katalogi olinmadi. Grand Mobile manual saqlandi."
             )
 
         return (
             True,
-            f"✅ {game_count} ta o'yin, "
-            f"{package_count} ta paket yangilandi."
+            f"✅ {game_count} ta PlayPay o'yin, "
+            f"{package_count} ta paket yangilandi.\n"
+            f"🎮 Grand Mobile manual katalog ham saqlandi."
         )
 
-    # Eski o'yinlarni yashiramiz
+    # Eski PlayPay o'yinlarini yashiramiz
     c = conn()
 
     c.execute(
@@ -977,6 +1083,11 @@ def sync_catalog():
 
         except Exception:
 
+            continue
+
+        # Grand Mobile ID PlayPay'dan kelib qolsa,
+        # manual Grand Mobile bilan aralashmasin
+        if gid == GRAND_MOBILE_GAME_ID:
             continue
 
         try:
@@ -1141,17 +1252,25 @@ def sync_catalog():
             "Mobile Legends 54 sync xatosi"
         )
 
+    # ========================================================
+    # GRAND MOBILE MANUAL
+    # MUHIM: API SYNC GRAND MOBILE'NI O'CHIRMAYDI
+    # ========================================================
+
+    ensure_grand_mobile()
+
     if game_count == 0:
 
         return (
             False,
-            "PlayPay katalogi olinmadi."
+            "PlayPay katalogi olinmadi. Grand Mobile manual katalog saqlandi."
         )
 
     return (
         True,
         f"✅ {game_count} ta o'yin, "
-        f"{package_count} ta paket yangilandi."
+        f"{package_count} ta PlayPay paketi yangilandi.\n"
+        f"🎮 Grand Mobile manual katalog ham saqlandi."
     )
 
 
@@ -1188,6 +1307,12 @@ def main_menu():
             InlineKeyboardButton(
                 "👤 Profil",
                 callback_data="profile"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                "🆘 SOS",
+                callback_data="sos"
             )
         ]
     ])
@@ -1283,7 +1408,6 @@ async def start(update, context):
 
 # ============================================================
 # GAMES
-# BU YERDA API SYNC YO'Q
 # ============================================================
 
 async def games(update, context):
@@ -1306,13 +1430,15 @@ async def games(update, context):
             CASE
                 WHEN game_id=? THEN 0
                 WHEN game_id=? THEN 1
-                ELSE 2
+                WHEN game_id=? THEN 2
+                ELSE 3
             END,
             name
         """,
         (
             PUBG_GAME_ID,
-            MOBILE_LEGENDS_GAME_ID
+            MOBILE_LEGENDS_GAME_ID,
+            GRAND_MOBILE_GAME_ID
         )
     ).fetchall()
 
@@ -1349,8 +1475,6 @@ async def games(update, context):
 
 # ============================================================
 # GAME PACKAGES
-# BU YERDA API'DAN OLINMAYDI
-# FAQAT DATABASE'DAGI KATALOG ISHLATILADI
 # ============================================================
 
 async def game(update, context):
@@ -1436,6 +1560,11 @@ async def game(update, context):
         id_label = "User ID"
         requires_server = True
 
+    elif game_id == GRAND_MOBILE_GAME_ID:
+
+        id_label = "Grand Mobile ID"
+        requires_server = False
+
     else:
 
         id_label = (
@@ -1453,6 +1582,16 @@ async def game(update, context):
         "id_label": id_label,
         "requires_server": requires_server
     })
+
+    # ========================================================
+    # GRAND MOBILE NARXLARI ENG TEPADA
+    # ========================================================
+
+    if game_id == GRAND_MOBILE_GAME_ID:
+
+        await q.message.reply_text(
+            GRAND_MOBILE_DESCRIPTION
+        )
 
     kb = []
 
@@ -1496,8 +1635,7 @@ async def game(update, context):
 
 
 # ============================================================
-# OFFER
-# BU YERDA API FALLBACK YO'Q
+# GAME OFFER
 # ============================================================
 
 async def offer(update, context):
@@ -1563,6 +1701,11 @@ async def offer(update, context):
     elif game_id == PUBG_GAME_ID:
 
         id_label = "Player ID"
+        requires_server = False
+
+    elif game_id == GRAND_MOBILE_GAME_ID:
+
+        id_label = "Grand Mobile ID"
         requires_server = False
 
     else:
@@ -1748,7 +1891,7 @@ async def confirm_order(
 
 
 # ============================================================
-# CONFIRM -> PLAYPAY
+# CONFIRM
 # ============================================================
 
 async def confirm(update, context):
@@ -1863,6 +2006,186 @@ async def confirm(update, context):
         )
 
         return
+
+    # ========================================================
+    # GRAND MOBILE MANUAL
+    # ========================================================
+
+    if game_id == GRAND_MOBILE_GAME_ID:
+
+        c = conn()
+
+        product = c.execute(
+            """
+            SELECT *
+            FROM products
+            WHERE game_id=?
+              AND paket_id=?
+              AND active=1
+            """,
+            (
+                game_id,
+                paket_id
+            )
+        ).fetchone()
+
+        c.close()
+
+        if not product:
+
+            await q.message.reply_text(
+                "❌ Grand Mobile paketi topilmadi."
+            )
+
+            return
+
+        # Balansni yechish
+        add_balance(
+            uid,
+            -price,
+            "grand_mobile_order",
+            f"Grand Mobile: {product['package_name']}"
+        )
+
+        now = datetime.now().isoformat()
+
+        c = conn()
+
+        cur = c.execute(
+            """
+            INSERT INTO orders
+            (
+                user_id,
+                playpay_order_id,
+                game_id,
+                paket_id,
+                product_name,
+                player_id,
+                fields_json,
+                cost_usd,
+                charged_usd,
+                sale_price,
+                status,
+                created_at,
+                updated_at
+            )
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """,
+            (
+                uid,
+                "",
+                GRAND_MOBILE_GAME_ID,
+                paket_id,
+                product["package_name"],
+                player_id,
+                json.dumps(
+                    {
+                        "player_id": player_id
+                    },
+                    ensure_ascii=False
+                ),
+                0,
+                0,
+                float(price),
+                "processing",
+                now,
+                now
+            )
+        )
+
+        local_order_id = cur.lastrowid
+
+        c.commit()
+        c.close()
+
+        # PROMO
+        promo = context.user_data.get(
+            "promo_code"
+        )
+
+        if promo:
+
+            c = conn()
+
+            exists = c.execute(
+                """
+                SELECT 1
+                FROM promo_users
+                WHERE user_id=?
+                  AND code=?
+                """,
+                (
+                    uid,
+                    promo
+                )
+            ).fetchone()
+
+            if not exists:
+
+                c.execute(
+                    """
+                    INSERT OR IGNORE INTO promo_users
+                    (user_id,code)
+                    VALUES (?,?)
+                    """,
+                    (
+                        uid,
+                        promo
+                    )
+                )
+
+                c.execute(
+                    """
+                    UPDATE promo_codes
+                    SET used=used+1
+                    WHERE code=?
+                    """,
+                    (promo,)
+                )
+
+            c.commit()
+            c.close()
+
+        # USERGA
+        await q.message.reply_text(
+            f"✅ Grand Mobile buyurtma qabul qilindi!\n\n"
+            f"📦 {product['package_name']}\n"
+            f"🆔 Grand Mobile ID: {player_id}\n"
+            f"💰 Narx: {price:,.0f} so'm\n"
+            f"🔢 Buyurtma: #{local_order_id}\n"
+            f"📊 Status: processing\n\n"
+            "⏳ Administrator buyurtmangizni ko'rib chiqadi.",
+            reply_markup=main_menu()
+        )
+
+        # ADMINGA
+        try:
+
+            await context.bot.send_message(
+                ADMIN_ID,
+                f"🎮 GRAND MOBILE BUYURTMA #{local_order_id}\n\n"
+                f"👤 User ID: {uid}\n"
+                f"📦 Paket: {product['package_name']}\n"
+                f"🆔 Grand Mobile ID: {player_id}\n"
+                f"💰 Sotuv: {price:,.0f} so'm\n"
+                f"📊 Status: processing\n\n"
+                "⚠️ MANUAL BUYURTMA"
+            )
+
+        except Exception as e:
+
+            log.error(
+                "Grand Mobile admin xabari xatosi: %s",
+                e
+            )
+
+        context.user_data.clear()
+
+        return
+
+    # ========================================================
+    # PLAYPAY BUYURTMA
+    # ========================================================
 
     body = {
         "game_id": int(game_id),
@@ -2153,6 +2476,35 @@ async def cancel(update, context):
     await q.message.reply_text(
         "❌ Bekor qilindi.",
         reply_markup=main_menu()
+    )
+
+
+# ============================================================
+# SOS
+# ============================================================
+
+async def sos_callback(update, context):
+
+    q = update.callback_query
+
+    try:
+        await q.answer()
+    except Exception:
+        pass
+
+    await q.message.reply_text(
+        "🆘 SOS\n\n"
+        "Assalomu Aleykum 👋\n"
+        "Administrator bilan bog'lanish uchun:\n\n"
+        "👤 @donuz1",
+        reply_markup=InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton(
+                    "⬅️ Orqaga",
+                    callback_data="back_main"
+                )
+            ]
+        ])
     )
 
 
@@ -2774,8 +3126,16 @@ async def orders_cb(update, context):
         text += (
             f"💰 {r['sale_price']:,.0f} so'm\n"
             f"📊 {r['status']}\n"
-            f"🔢 PlayPay: "
-            f"{r['playpay_order_id']}\n"
+        )
+
+        if r["playpay_order_id"]:
+
+            text += (
+                f"🔢 PlayPay: "
+                f"{r['playpay_order_id']}\n"
+            )
+
+        text += (
             f"🕐 {r['created_at']}\n\n"
         )
 
@@ -3262,8 +3622,16 @@ async def admin_orders(update, context):
             f"💰 Sotuv: "
             f"{r['sale_price']:,.0f} so'm\n"
             f"📊 {r['status']}\n"
-            f"🔢 PlayPay: "
-            f"{r['playpay_order_id']}\n"
+        )
+
+        if r["playpay_order_id"]:
+
+            text += (
+                f"🔢 PlayPay: "
+                f"{r['playpay_order_id']}\n"
+            )
+
+        text += (
             f"🕐 {r['created_at']}\n\n"
         )
 
@@ -4391,7 +4759,7 @@ async def admin_callback(update, context):
             )
 
     # ========================================================
-    # FAQAT ADMIN KATALOG YANGILAYDI
+    # KATALOG
     # ========================================================
 
     elif d == "a_sync":
@@ -4438,8 +4806,6 @@ async def callback_router(update, context):
                 context
             )
 
-        # Eski callback saqlangan.
-        # Asosiy menyuda endi Balans tugmasi yo'q.
         elif d == "balance":
 
             await balance_cb(
@@ -4473,6 +4839,20 @@ async def callback_router(update, context):
             await promo_cb(
                 update,
                 context
+            )
+
+        elif d == "sos":
+
+            await sos_callback(
+                update,
+                context
+            )
+
+        elif d == "back_main":
+
+            await q.message.reply_text(
+                "🏠 Asosiy menyu:",
+                reply_markup=main_menu()
             )
 
         elif d.startswith("g:"):
@@ -4668,6 +5048,7 @@ def main():
 
     ensure_pubg()
     ensure_mobile_legends()
+    ensure_grand_mobile()
 
     # --------------------------------------------------------
     # ENV TEKSHIRISH
@@ -4782,17 +5163,6 @@ def main():
             first=30
         )
 
-    # ========================================================
-    # MUHIM:
-    # startup_catalog OLIB TASHLANDI.
-    #
-    # Bot ishga tushganda katalog API'dan yangilanmaydi.
-    #
-    # Katalog faqat:
-    # ADMIN -> 🔄 Katalog
-    # orqali sync qilinadi.
-    # ========================================================
-
     # --------------------------------------------------------
     # LOG
     # --------------------------------------------------------
@@ -4819,6 +5189,14 @@ def main():
 
     print(
         "       MOBILE LEGENDS ID: 54"
+    )
+
+    print(
+        "       GRAND MOBILE: MANUAL"
+    )
+
+    print(
+        "       GRAND MOBILE ID: 999"
     )
 
     print(
