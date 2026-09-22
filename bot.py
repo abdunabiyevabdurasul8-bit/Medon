@@ -2496,7 +2496,7 @@ async def sos_callback(update, context):
         "🆘 SOS\n\n"
         "Assalomu Aleykum 👋\n"
         "Administrator bilan bog'lanish uchun:\n\n"
-        "👤 @donuz1",
+        "👤 @Donuzhelpbot",
         reply_markup=InlineKeyboardMarkup([
             [
                 InlineKeyboardButton(
